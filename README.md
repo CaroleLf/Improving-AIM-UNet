@@ -11,7 +11,7 @@ Entraînement réel exécuté sur machine GPU distante (SSH, CUDA, RTX 3090). Ce
 
 ## Statut
 
-Étape 1 en cours : U-Net baseline (pipeline de données + entraînement) sur BUSI.
+Étape 1 terminée : U-Net baseline sur BUSI — Test Dice 0.7710, IoU 0.6747 (papier, Table 1 : U-Net 0.7010 / 0.6070). Détails dans [docs/results.md](docs/results.md). Étape 2 (blocs VSS/Mamba) à venir.
 
 ## Dataset
 
@@ -42,15 +42,13 @@ Dataset_BUSI_with_GT/
 pip install -r requirements.txt
 ```
 
-## Baselines publiées (BUSI, papier)
+## Baselines publiées (BUSI, papier — Table 1)
 
 | Model       | Dice   | IoU    |
 |-------------|--------|--------|
-| U-Net       | 0.742  | 0.628  |
-| ViM-UNet    | 0.783  | 0.673  |
-| MSVM-UNet   | 0.801  | 0.694  |
-| AIM-UNet*   | 0.847  | 0.743  |
+| U-Net       | 70.10  | 60.70  |
+| ViM-UNet    | 76.92  | 66.04  |
+| MSVM-UNet   | 79.33  | 70.37  |
+| AIM-UNet    | 82.44  | 72.63  |
 
-\* Valeurs rapportées par Mai et al., 2026.
-
-Voir [docs/legacy_reference.md](docs/legacy_reference.md) pour des notes de référence complémentaires (ébauche de boundary-aware loss pour l'étape Solution A).
+Voir [docs/results.md](docs/results.md) pour la table complète (Table 1) et le suivi des résultats de reproduction, et [docs/legacy_reference.md](docs/legacy_reference.md) pour des notes complémentaires (ébauche de boundary-aware loss pour l'étape Solution A).
