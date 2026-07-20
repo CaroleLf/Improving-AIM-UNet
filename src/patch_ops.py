@@ -39,6 +39,24 @@ class PatchMerging(nn.Module):
         return x
 
 
+class PatchExpand(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.expand = nn.Linear(dim, 2 * dim, bias=False)
+        self.norm = nn.LayerNorm(dim // 2)
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        x = x.permute(0, 2, 3, 1)                      # (B, H, W, C)
+        x = self.expand(x)                               # (B, H, W, 2C)
+        x = x.view(B, H, W, 2, 2, C // 2)                  # split 2C -> (p1=2, p2=2, C/2)
+        x = x.permute(0, 1, 3, 2, 4, 5)                      # (B, H, p1, W, p2, C/2)
+        x = x.reshape(B, H * 2, W * 2, C // 2)                 # merge (H,p1)->2H, (W,p2)->2W
+        x = self.norm(x)
+        x = x.permute(0, 3, 1, 2)                                # (B, C/2, 2H, 2W)
+        return x
+
+
 if __name__ == "__main__":
     x = torch.randn(2, 1, 256, 256)
     patch_embed = PatchEmbed(in_channels=1, embed_dim=64, patch_size=4)
@@ -48,3 +66,7 @@ if __name__ == "__main__":
     merge = PatchMerging(dim=64)
     z = merge(y)
     print("PatchMerging:", z.shape)
+
+    expand = PatchExpand(dim=128)
+    w = expand(z)
+    print("PatchExpand:", w.shape)
