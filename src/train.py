@@ -13,6 +13,15 @@ from metrics import compute_metrics
 from splits import build_split, load_split, save_split
 from transforms import get_eval_transform, get_train_transform
 from unet import UNet
+from vss_unet import VSSUNet
+
+
+def build_model(name):
+    if name == "unet":
+        return UNet(in_channels=1, out_channels=1)
+    if name == "vss_unet":
+        return VSSUNet(in_channels=1, out_channels=1)
+    raise ValueError(f"unknown model: {name}")
 
 
 def set_seed(seed):
@@ -55,6 +64,7 @@ def run_epoch(model, loader, loss_fn, device, optimizer=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", required=True)
+    parser.add_argument("--model", choices=["unet", "vss_unet"], default="unet")
     parser.add_argument("--split_path", default="data/splits/busi_split.json")
     parser.add_argument("--epochs", type=int, default=150)
     parser.add_argument("--batch_size", type=int, default=4)
@@ -97,7 +107,7 @@ def main():
         val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
 
-    model = UNet(in_channels=1, out_channels=1).to(device)
+    model = build_model(args.model).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     loss_fn = BCEDiceLoss()
 

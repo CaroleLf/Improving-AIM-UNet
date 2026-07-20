@@ -7,14 +7,14 @@ from torch.utils.data import DataLoader
 from dataset import BUSIDataset
 from losses import BCEDiceLoss
 from splits import load_split
-from train import run_epoch
+from train import build_model, run_epoch
 from transforms import get_eval_transform
-from unet import UNet
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", required=True)
+    parser.add_argument("--model", choices=["unet", "vss_unet"], default="unet")
     parser.add_argument("--split_path", default="data/splits/busi_split.json")
     parser.add_argument("--checkpoint", default="checkpoints/best_model.pth")
     parser.add_argument("--image_size", type=int, default=256)
@@ -32,7 +32,7 @@ def main():
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
 
-    model = UNet(in_channels=1, out_channels=1).to(device)
+    model = build_model(args.model).to(device)
     model.load_state_dict(torch.load(args.checkpoint, map_location=device))
 
     loss_fn = BCEDiceLoss()
