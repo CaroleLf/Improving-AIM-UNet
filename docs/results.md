@@ -5,6 +5,7 @@ Split fixe (seed=42, `data/splits/busi_split.json`), mêmes conditions pour tout
 | Étape | Modèle | Loss | Dataset | Val Dice (best) | Test Dice | Test IoU | Test Precision | Test Recall |
 |-------|--------|------|---------|------------------|-----------|----------|-----------------|-------------|
 | 1 | U-Net baseline | BCE+Dice | BUSI | 0.7771 (epoch 144) | 0.7710 | 0.6747 | 0.8406 | 0.7596 |
+| 2 | VSS-UNet (VSS seul, skip concat simple, N=2/étage, base=64 — hypothèses non confirmées) | BCE+Dice | BUSI | 0.7804 (epoch 150) | 0.7350 | 0.6457 | 0.7652 | 0.7581 |
 
 ## Référence papier (Table 1, BUSI — valeurs réelles vérifiées dans le PDF, CMPB-D-26-02655)
 
@@ -28,3 +29,4 @@ Table 4 (ablation loss, avec Adaptive Inception + SK per-channel) : BCE+Dice seu
 
 - Étape 1 (U-Net baseline) : Dice 0.7710 vs 0.7010 dans le papier (+0.070), IoU 0.6747 vs 0.6070 (+0.0677) — reproduction jugée valide et même au-dessus, run-to-run variance normale (split différent, versions de librairies différentes).
 - Precision (0.8406) nettement > Recall (0.7596) : le modèle sous-segmente plutôt qu'il ne sur-segmente. Point de référence pour évaluer l'impact de Solution A (loss boundary-aware) — si elle cible bien la sous-segmentation aux frontières à faible contraste, on doit voir le recall remonter à l'étape correspondante sans trop dégrader la precision.
+- Étape 2 (VSS seul) : Test Dice **inférieur** au baseline (0.7350 vs 0.7710, -0.036), malgré un Val Dice légèrement supérieur (0.7804 vs 0.7771) — écart val/test à noter, pas un bug de pipeline (chaque brique validée unitairement). Hypothèses : (a) la skip connection en concaténation simple n'est peut-être pas adaptée à un backbone hiérarchique à base de Patch Embedding — le SAB/CAB prévu à l'étape 3 pourrait être un composant nécessaire plutôt qu'un raffinement optionnel ; (b) N=2 blocs/étage et canal de base 64 restent des hypothèses non confirmées par le Professeur Nguyen ; (c) train_loss final plus haut que le baseline (0.15 vs 0.12) au même nombre d'epochs, possible sous-entraînement/optimisation différente pour les blocs Mamba. À rediscuter avec le Professeur Nguyen avant l'étape 3.

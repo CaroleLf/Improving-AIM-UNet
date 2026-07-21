@@ -14,7 +14,7 @@ from transforms import get_eval_transform
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", required=True)
-    parser.add_argument("--model", choices=["unet", "vss_unet"], default="unet")
+    parser.add_argument("--model", choices=["unet", "vss_unet", "aim_unet"], default="unet")
     parser.add_argument("--split_path", default="data/splits/busi_split.json")
     parser.add_argument("--checkpoint", default="checkpoints/best_model.pth")
     parser.add_argument("--image_size", type=int, default=256)

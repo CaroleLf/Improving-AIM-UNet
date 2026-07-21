@@ -12,6 +12,7 @@ from losses import BCEDiceLoss
 from metrics import compute_metrics
 from splits import build_split, load_split, save_split
 from transforms import get_eval_transform, get_train_transform
+from aim_unet import AIMUNet
 from unet import UNet
 from vss_unet import VSSUNet
 
@@ -21,6 +22,8 @@ def build_model(name):
         return UNet(in_channels=1, out_channels=1)
     if name == "vss_unet":
         return VSSUNet(in_channels=1, out_channels=1)
+    if name == "aim_unet":
+        return AIMUNet(in_channels=1, out_channels=1)
     raise ValueError(f"unknown model: {name}")
 
 
@@ -64,7 +67,7 @@ def run_epoch(model, loader, loss_fn, device, optimizer=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", required=True)
-    parser.add_argument("--model", choices=["unet", "vss_unet"], default="unet")
+    parser.add_argument("--model", choices=["unet", "vss_unet", "aim_unet"], default="unet")
     parser.add_argument("--split_path", default="data/splits/busi_split.json")
     parser.add_argument("--epochs", type=int, default=150)
     parser.add_argument("--batch_size", type=int, default=4)

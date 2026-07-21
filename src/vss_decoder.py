@@ -1,16 +1,18 @@
 import torch
 import torch.nn as nn
 
+from attention_bridge import AttentionBridge
 from patch_ops import PatchExpand
 from vss_block import VSSBlock
 
 
 class VSSDecoder(nn.Module):
     def __init__(self, base_dim=64, depths=(2, 2, 2), out_channels=1,
-                 d_state=16, d_conv=4, expand_factor=2):
+                 d_state=16, d_conv=4, expand_factor=2, use_attention_bridge=False):
         super().__init__()
         dims = [base_dim * (2 ** i) for i in range(len(depths) + 1)]   # [64,128,256,512]
         rev_dims = dims[::-1]                                            # [512,256,128,64]
+        self.use_attention_bridge = use_attention_bridge
 
         self.expands = nn.ModuleList([PatchExpand(dim) for dim in rev_dims[:-1]])
         self.reduces = nn.ModuleList([nn.Linear(dim, dim // 2) for dim in rev_dims[:-1]])
@@ -21,15 +23,21 @@ class VSSDecoder(nn.Module):
             ])
             for dim, depth in zip(rev_dims[:-1], depths)
         ])
+        if use_attention_bridge:
+            self.bridges = nn.ModuleList([AttentionBridge(dim // 2) for dim in rev_dims[:-1]])
 
         self.final_expand = nn.ConvTranspose2d(base_dim, out_channels, kernel_size=4, stride=4)
 
     def forward(self, x, skips):
         rev_skips = skips[:-1][::-1]   # deepest-first, excluding the bottleneck (skips[-1] == x)
 
-        for expand, reduce, stage, skip in zip(self.expands, self.reduces, self.stages, rev_skips):
+        for i, (expand, reduce, stage, skip) in enumerate(
+            zip(self.expands, self.reduces, self.stages, rev_skips)
+        ):
             x = expand(x)                          # halve channels, double resolution
-            x = torch.cat([x, skip], dim=1)          # concat on channel dim (simple skip, no SAB/CAB yet)
+            if self.use_attention_bridge:
+                skip = self.bridges[i](skip)         # CAB then SAB refine the skip before fusion
+            x = torch.cat([x, skip], dim=1)          # concat on channel dim
             x = x.permute(0, 2, 3, 1)                  # (B, H, W, C) for Linear
             x = reduce(x)
             x = x.permute(0, 3, 1, 2)                    # back to (B, C, H, W)

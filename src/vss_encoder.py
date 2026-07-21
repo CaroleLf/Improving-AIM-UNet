@@ -1,17 +1,21 @@
 import torch
 import torch.nn as nn
 
+from aim_module import AIMModule
 from patch_ops import PatchEmbed, PatchMerging
 from vss_block import VSSBlock
 
 
 class VSSEncoder(nn.Module):
     def __init__(self, in_channels=1, base_dim=64, depths=(2, 2, 2, 2),
-                 d_state=16, d_conv=4, expand=2):
+                 d_state=16, d_conv=4, expand=2, use_aim=False):
         super().__init__()
         self.patch_embed = PatchEmbed(in_channels=in_channels, embed_dim=base_dim, patch_size=4)
+        self.use_aim = use_aim
 
         dims = [base_dim * (2 ** i) for i in range(len(depths))]
+        if use_aim:
+            self.aims = nn.ModuleList([AIMModule(dim) for dim in dims])
         self.stages = nn.ModuleList([
             nn.Sequential(*[
                 VSSBlock(dim, d_state=d_state, d_conv=d_conv, expand=expand)
@@ -25,6 +29,8 @@ class VSSEncoder(nn.Module):
         x = self.patch_embed(x)
         skips = []
         for i, stage in enumerate(self.stages):
+            if self.use_aim:
+                x = self.aims[i](x)
             x = stage(x)
             skips.append(x)
             if i < len(self.stages) - 1:
