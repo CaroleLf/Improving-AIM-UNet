@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 def soft_dice_loss(pred, target, eps=1e-6):
@@ -76,3 +77,30 @@ class DESLLoss(nn.Module):
         return (self.lambda_bce * bce_loss
                 + (1.0 - self.lambda_bce) * dice_loss
                 + self.lambda_div * div_loss)
+
+
+def extract_boundary(mask, kernel_size=5):
+    """Boundary band around the GT contour via morphological dilation (max_pool2d)."""
+    dilated = F.max_pool2d(mask, kernel_size=kernel_size, stride=1, padding=kernel_size // 2)
+    return (dilated - mask).clamp(0.0, 1.0)
+
+
+class BoundaryAwareDESLLoss(DESLLoss):
+    """DESL + a Dice term restricted to a boundary band around the GT contour (Solution A)."""
+
+    def __init__(self, lambda_bce=0.5, lambda_div=0.1, lambda_cos=0.1, lambda_var=0.05,
+                 eps=1e-6, nu=0.5, lambda_bdry=0.5, boundary_kernel=5):
+        super().__init__(lambda_bce=lambda_bce, lambda_div=lambda_div, lambda_cos=lambda_cos,
+                          lambda_var=lambda_var, eps=eps, nu=nu)
+        self.lambda_bdry = lambda_bdry
+        self.boundary_kernel = boundary_kernel
+
+    def forward(self, pred, target, aim_branches):
+        base_loss = super().forward(pred, target, aim_branches)
+
+        boundary_mask = extract_boundary(target, self.boundary_kernel)
+        if boundary_mask.sum() < 1.0:
+            return base_loss
+
+        bdry_loss = soft_dice_loss(pred * boundary_mask, target * boundary_mask, eps=self.eps)
+        return base_loss + self.lambda_bdry * bdry_loss
