@@ -47,13 +47,13 @@ class PatchExpand(nn.Module):
 
     def forward(self, x):
         B, C, H, W = x.shape
-        x = x.permute(0, 2, 3, 1)                      # (B, H, W, C)
-        x = self.expand(x)                               # (B, H, W, 2C)
-        x = x.view(B, H, W, 2, 2, C // 2)                  # split 2C -> (p1=2, p2=2, C/2)
-        x = x.permute(0, 1, 3, 2, 4, 5)                      # (B, H, p1, W, p2, C/2)
-        x = x.reshape(B, H * 2, W * 2, C // 2)                 # merge (H,p1)->2H, (W,p2)->2W
+        x = x.permute(0, 2, 3, 1)                    
+        x = self.expand(x)                            
+        x = x.view(B, H, W, 2, 2, C // 2)                
+        x = x.permute(0, 1, 3, 2, 4, 5)                    
+        x = x.reshape(B, H * 2, W * 2, C // 2)                 
         x = self.norm(x)
-        x = x.permute(0, 3, 1, 2)                                # (B, C/2, 2H, 2W)
+        x = x.permute(0, 3, 1, 2)                               
         return x
 
 

@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataset import BUSIDataset
-from losses import BCEDiceLoss
+from losses import BCEDiceLoss, DESLLoss
 from metrics import compute_metrics
 from splits import build_split, load_split, save_split
 from transforms import get_eval_transform, get_train_transform
@@ -17,13 +17,13 @@ from unet import UNet
 from vss_unet import VSSUNet
 
 
-def build_model(name):
+def build_model(name, return_branch_outputs=False):
     if name == "unet":
         return UNet(in_channels=1, out_channels=1)
     if name == "vss_unet":
         return VSSUNet(in_channels=1, out_channels=1)
     if name == "aim_unet":
-        return AIMUNet(in_channels=1, out_channels=1)
+        return AIMUNet(in_channels=1, out_channels=1, return_branch_outputs=return_branch_outputs)
     raise ValueError(f"unknown model: {name}")
 
 
@@ -45,8 +45,13 @@ def run_epoch(model, loader, loss_fn, device, optimizer=None):
         for images, masks in loader:
             images, masks = images.to(device), masks.to(device)
 
-            preds = model(images)
-            loss = loss_fn(preds, masks)
+            output = model(images)
+            if isinstance(output, tuple):
+                preds, aux = output
+                loss = loss_fn(preds, masks, aux)
+            else:
+                preds = output
+                loss = loss_fn(preds, masks)
 
             if is_train:
                 optimizer.zero_grad()
@@ -68,6 +73,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", required=True)
     parser.add_argument("--model", choices=["unet", "vss_unet", "aim_unet"], default="unet")
+    parser.add_argument("--loss", choices=["bce_dice", "desl"], default="bce_dice")
     parser.add_argument("--split_path", default="data/splits/busi_split.json")
     parser.add_argument("--epochs", type=int, default=150)
     parser.add_argument("--batch_size", type=int, default=4)
@@ -110,9 +116,10 @@ def main():
         val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
 
-    model = build_model(args.model).to(device)
+    use_desl = args.loss == "desl"
+    model = build_model(args.model, return_branch_outputs=use_desl).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    loss_fn = BCEDiceLoss()
+    loss_fn = DESLLoss() if use_desl else BCEDiceLoss()
 
     checkpoint_dir = Path(args.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)

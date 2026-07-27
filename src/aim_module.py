@@ -28,17 +28,21 @@ class AIMModule(nn.Module):
         self.gate_fc2 = nn.Linear(hidden, channels * self.M)
         self.act = nn.ReLU(inplace=True)
 
-    def forward(self, x):
+    def forward(self, x, return_branches=False):
         B, C, H, W = x.shape
-        branch_outputs = [branch(x) for branch in self.branches]    
-        s = x.mean(dim=(2, 3))                                         
-        z = self.act(self.gate_fc1(s))                                    
-        z = self.gate_fc2(z).view(B, self.M, C)                            
-        alpha = torch.softmax(z, dim=1)                                       
+        branch_outputs = [branch(x) for branch in self.branches]
+        s = x.mean(dim=(2, 3))
+        z = self.act(self.gate_fc1(s))
+        z = self.gate_fc2(z).view(B, self.M, C)
+        alpha = torch.softmax(z, dim=1)
 
-        stacked = torch.stack(branch_outputs, dim=1)                           
-        alpha = alpha.unsqueeze(-1).unsqueeze(-1)                                 
-        return (alpha * stacked).sum(dim=1)                                         
+        stacked = torch.stack(branch_outputs, dim=1)
+        alpha_ = alpha.unsqueeze(-1).unsqueeze(-1)
+        fused = (alpha_ * stacked).sum(dim=1)
+
+        if return_branches:
+            return fused, branch_outputs
+        return fused
 
 
 if __name__ == "__main__":

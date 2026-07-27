@@ -29,18 +29,18 @@ class VSSDecoder(nn.Module):
         self.final_expand = nn.ConvTranspose2d(base_dim, out_channels, kernel_size=4, stride=4)
 
     def forward(self, x, skips):
-        rev_skips = skips[:-1][::-1]   # deepest-first, excluding the bottleneck (skips[-1] == x)
+        rev_skips = skips[:-1][::-1]   
 
         for i, (expand, reduce, stage, skip) in enumerate(
             zip(self.expands, self.reduces, self.stages, rev_skips)
         ):
-            x = expand(x)                          # halve channels, double resolution
+            x = expand(x)                         
             if self.use_attention_bridge:
-                skip = self.bridges[i](skip)         # CAB then SAB refine the skip before fusion
-            x = torch.cat([x, skip], dim=1)          # concat on channel dim
-            x = x.permute(0, 2, 3, 1)                  # (B, H, W, C) for Linear
+                skip = self.bridges[i](skip)        
+            x = torch.cat([x, skip], dim=1)        
+            x = x.permute(0, 2, 3, 1)                 
             x = reduce(x)
-            x = x.permute(0, 3, 1, 2)                    # back to (B, C, H, W)
+            x = x.permute(0, 3, 1, 2)                   
             x = stage(x)
 
         x = self.final_expand(x)

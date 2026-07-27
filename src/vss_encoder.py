@@ -28,20 +28,22 @@ class VSSEncoder(nn.Module):
     def forward(self, x):
         x = self.patch_embed(x)
         skips = []
+        aim_branches = []
         for i, stage in enumerate(self.stages):
             if self.use_aim:
-                x = self.aims[i](x)
+                x, branches = self.aims[i](x, return_branches=True)
+                aim_branches.append(branches)
             x = stage(x)
             skips.append(x)
             if i < len(self.stages) - 1:
                 x = self.merges[i](x)
-        return x, skips
+        return x, skips, aim_branches
 
 
 if __name__ == "__main__":
     x = torch.randn(2, 1, 256, 256).to("cuda")
     encoder = VSSEncoder(in_channels=1).to("cuda")
-    out, skips = encoder(x)
+    out, skips, _ = encoder(x)
     print("bottleneck:", out.shape)
     for i, s in enumerate(skips):
         print(f"skip {i+1}:", s.shape)

@@ -5,9 +5,9 @@ from vss_encoder import VSSEncoder
 
 
 class AIMUNet(torch.nn.Module):
-    def __init__(self, in_channels=1, out_channels=1, base_dim=64,
+    def __init__(self, in_channels=1, out_channels=1, base_dim=96,
                  encoder_depths=(2, 2, 2, 2), decoder_depths=(2, 2, 2),
-                 d_state=16, d_conv=4, expand=2):
+                 d_state=16, d_conv=4, expand=2, return_branch_outputs=False):
         super().__init__()
         self.encoder = VSSEncoder(in_channels=in_channels, base_dim=base_dim,
                                    depths=encoder_depths, d_state=d_state, d_conv=d_conv,
@@ -15,10 +15,14 @@ class AIMUNet(torch.nn.Module):
         self.decoder = VSSDecoder(base_dim=base_dim, depths=decoder_depths, out_channels=out_channels,
                                    d_state=d_state, d_conv=d_conv, expand_factor=expand,
                                    use_attention_bridge=True)
+        self.return_branch_outputs = return_branch_outputs
 
     def forward(self, x):
-        bottleneck, skips = self.encoder(x)
-        return self.decoder(bottleneck, skips)
+        bottleneck, skips, aim_branches = self.encoder(x)
+        out = self.decoder(bottleneck, skips)
+        if self.return_branch_outputs:
+            return out, aim_branches
+        return out
 
 
 if __name__ == "__main__":

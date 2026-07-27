@@ -6,7 +6,13 @@ from mamba_ssm import Mamba
 class SS2D(nn.Module):
     def __init__(self, dim, d_state=16, d_conv=4, expand=2):
         super().__init__()
-        self.scan = Mamba(d_model=dim, d_state=d_state, d_conv=d_conv, expand=expand)
+        # separate scan weights per direction, matching the official VMamba SS2D
+        # (only A_log/D are shared there; we approximate with 4 independent Mamba
+        # modules rather than hand-splitting mamba_ssm's internals)
+        self.scans = nn.ModuleList([
+            Mamba(d_model=dim, d_state=d_state, d_conv=d_conv, expand=expand)
+            for _ in range(4)
+        ])
 
     @staticmethod
     def _to_row_major(x):
@@ -34,10 +40,10 @@ class SS2D(nn.Module):
         seq_row_rev = torch.flip(seq_row, dims=[1])
         seq_col_rev = torch.flip(seq_col, dims=[1])
 
-        out_row = self._from_row_major(self.scan(seq_row), H, W)
-        out_col = self._from_col_major(self.scan(seq_col), H, W)
-        out_row_rev = self._from_row_major(torch.flip(self.scan(seq_row_rev), dims=[1]), H, W)
-        out_col_rev = self._from_col_major(torch.flip(self.scan(seq_col_rev), dims=[1]), H, W)
+        out_row = self._from_row_major(self.scans[0](seq_row), H, W)
+        out_col = self._from_col_major(self.scans[1](seq_col), H, W)
+        out_row_rev = self._from_row_major(torch.flip(self.scans[2](seq_row_rev), dims=[1]), H, W)
+        out_col_rev = self._from_col_major(torch.flip(self.scans[3](seq_col_rev), dims=[1]), H, W)
 
         return out_row + out_col + out_row_rev + out_col_rev
 

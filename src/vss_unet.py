@@ -16,7 +16,7 @@ class VSSUNet(nn.Module):
                                    d_state=d_state, d_conv=d_conv, expand_factor=expand)
 
     def forward(self, x):
-        bottleneck, skips = self.encoder(x)
+        bottleneck, skips, _ = self.encoder(x)
         return self.decoder(bottleneck, skips)
 
 
