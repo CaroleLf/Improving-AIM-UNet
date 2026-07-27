@@ -80,9 +80,16 @@ class DESLLoss(nn.Module):
 
 
 def extract_boundary(mask, kernel_size=5):
-    """Boundary band around the GT contour via morphological dilation (max_pool2d)."""
+    """Boundary band straddling both sides of the GT contour (dilation minus erosion).
+
+    Using dilation alone (dilated - mask) gives a band strictly outside the mask,
+    which never overlaps target (mask * that band is always 0) -- degenerate for
+    both the loss and any metric restricted to it. Erosion is computed as the
+    complement of a dilation of the inverted mask, so both stay pure max_pool2d.
+    """
     dilated = F.max_pool2d(mask, kernel_size=kernel_size, stride=1, padding=kernel_size // 2)
-    return (dilated - mask).clamp(0.0, 1.0)
+    eroded = 1.0 - F.max_pool2d(1.0 - mask, kernel_size=kernel_size, stride=1, padding=kernel_size // 2)
+    return (dilated - eroded).clamp(0.0, 1.0)
 
 
 class BoundaryAwareDESLLoss(DESLLoss):
