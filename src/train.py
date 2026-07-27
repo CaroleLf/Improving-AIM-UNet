@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataset import BUSIDataset
-from losses import BCEDiceLoss, DESLLoss
+from losses import BCEDiceLoss, BoundaryAwareDESLLoss, DESLLoss
 from metrics import compute_metrics
 from splits import build_split, load_split, save_split
 from transforms import get_eval_transform, get_train_transform
@@ -38,7 +38,7 @@ def run_epoch(model, loader, loss_fn, device, optimizer=None):
     model.train() if is_train else model.eval()
 
     total_loss = 0.0
-    metric_sums = {"dice": 0.0, "iou": 0.0, "precision": 0.0, "recall": 0.0}
+    metric_sums = {"dice": 0.0, "iou": 0.0, "precision": 0.0, "recall": 0.0, "boundary_dice": 0.0}
     n_batches = 0
 
     with torch.enable_grad() if is_train else torch.no_grad():
@@ -73,7 +73,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", required=True)
     parser.add_argument("--model", choices=["unet", "vss_unet", "aim_unet"], default="unet")
-    parser.add_argument("--loss", choices=["bce_dice", "desl"], default="bce_dice")
+    parser.add_argument("--loss", choices=["bce_dice", "desl", "boundary_desl"], default="bce_dice")
     parser.add_argument("--split_path", default="data/splits/busi_split.json")
     parser.add_argument("--epochs", type=int, default=150)
     parser.add_argument("--batch_size", type=int, default=4)
@@ -116,10 +116,15 @@ def main():
         val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
 
-    use_desl = args.loss == "desl"
-    model = build_model(args.model, return_branch_outputs=use_desl).to(device)
+    needs_branches = args.loss in ("desl", "boundary_desl")
+    model = build_model(args.model, return_branch_outputs=needs_branches).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    loss_fn = DESLLoss() if use_desl else BCEDiceLoss()
+    if args.loss == "boundary_desl":
+        loss_fn = BoundaryAwareDESLLoss()
+    elif args.loss == "desl":
+        loss_fn = DESLLoss()
+    else:
+        loss_fn = BCEDiceLoss()
 
     checkpoint_dir = Path(args.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -129,7 +134,7 @@ def main():
 
     fieldnames = [
         "epoch", "train_loss", "val_loss",
-        "val_dice", "val_iou", "val_precision", "val_recall",
+        "val_dice", "val_iou", "val_precision", "val_recall", "val_boundary_dice",
     ]
     with open(log_path, "w", newline="") as f:
         csv.writer(f).writerow(fieldnames)
@@ -149,6 +154,7 @@ def main():
                 epoch, train_loss, val_loss,
                 val_metrics["dice"], val_metrics["iou"],
                 val_metrics["precision"], val_metrics["recall"],
+                val_metrics["boundary_dice"],
             ])
 
         if val_metrics["dice"] > best_val_dice:

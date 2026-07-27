@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataset import BUSIDataset
-from losses import BCEDiceLoss, DESLLoss
+from losses import BCEDiceLoss, BoundaryAwareDESLLoss, DESLLoss
 from splits import load_split
 from train import build_model, run_epoch
 from transforms import get_eval_transform
@@ -15,7 +15,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", required=True)
     parser.add_argument("--model", choices=["unet", "vss_unet", "aim_unet"], default="unet")
-    parser.add_argument("--loss", choices=["bce_dice", "desl"], default="bce_dice")
+    parser.add_argument("--loss", choices=["bce_dice", "desl", "boundary_desl"], default="bce_dice")
     parser.add_argument("--split_path", default="data/splits/busi_split.json")
     parser.add_argument("--checkpoint", default="checkpoints/best_model.pth")
     parser.add_argument("--image_size", type=int, default=256)
@@ -33,11 +33,16 @@ def main():
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
 
-    use_desl = args.loss == "desl"
-    model = build_model(args.model, return_branch_outputs=use_desl).to(device)
+    needs_branches = args.loss in ("desl", "boundary_desl")
+    model = build_model(args.model, return_branch_outputs=needs_branches).to(device)
     model.load_state_dict(torch.load(args.checkpoint, map_location=device))
 
-    loss_fn = DESLLoss() if use_desl else BCEDiceLoss()
+    if args.loss == "boundary_desl":
+        loss_fn = BoundaryAwareDESLLoss()
+    elif args.loss == "desl":
+        loss_fn = DESLLoss()
+    else:
+        loss_fn = BCEDiceLoss()
     test_loss, test_metrics = run_epoch(model, test_loader, loss_fn, device, optimizer=None)
 
     print(f"test_loss: {test_loss:.4f}")
