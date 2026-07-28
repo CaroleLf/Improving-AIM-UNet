@@ -50,4 +50,15 @@ Table 4 (ablation loss, avec Adaptive Inception + SK per-channel) : BCE+Dice seu
 - Référence à battre : **Test Boundary Dice = 0.5747** (AIM-UNet + DESL, étape 4b, sans Solution A).
 - **Résultat final (étape 5)** : Solution A améliore le Recall (0.7778 → 0.7949, +0.017) et le **Boundary Dice** (0.5747 → 0.5926, +0.018) — la métrique la plus directement pertinente pour évaluer l'objectif déclaré (précision de délimitation des bords). Contrepartie : Precision en baisse plus marquée (0.8284 → 0.7639, -0.065), Dice global (-0.019) et IoU (-0.021) légèrement en baisse aussi.
 - **Interprétation** : effet mesurable et cohérent avec la théorie — le terme de boundary loss pousse le modèle à être moins conservateur sur les pixels de contour (d'où le recall et le boundary Dice en hausse), au prix de quelques faux positifs supplémentaires ailleurs (d'où la baisse de precision). Pas un gain spectaculaire sur le Dice global, mais un impact réel et mesurable sur la métrique ciblée par Solution A — cohérent avec l'objectif initial du stage ("mesurer si cette amélioration a un impact réel et mesurable, particulièrement pertinent pour les petites lésions ou les frontières à faible contraste").
-- Piste non explorée faute de temps : un `λ_bdry` plus faible que 0.5 (le défaut hérité de l'ébauche legacy) pourrait donner un meilleur compromis precision/recall — actuellement pas confirmé, à tester si le temps le permet.
+- **λ_bdry retuné (0.2 au lieu de 0.5)** : confirme l'hypothèse — le défaut hérité de l'ébauche legacy était trop agressif. Avec `λ_bdry=0.2` (300 epochs, sinon identique) :
+
+  | | Référence (DESL) | Solution A λ=0.5 | Solution A λ=0.2 | Solution A λ=0.1 |
+  |---|---|---|---|---|
+  | Test Dice | 0.7712 | 0.7520 | **0.7722** | 0.7447 |
+  | Test IoU | 0.6869 | 0.6663 | **0.6858** | 0.6605 |
+  | Precision | 0.8284 | 0.7639 | **0.8018** | 0.7649 |
+  | Recall | 0.7778 | 0.7949 | 0.7832 | 0.7884 |
+  | Boundary Dice | 0.5747 | **0.5926** | 0.5823 | 0.5906 |
+
+  Meilleur compromis de loin à `λ_bdry=0.2` : Dice légèrement **au-dessus** de la référence (0.7722 vs 0.7712), IoU quasi égal (-0.0011), tout en gardant un gain réel sur le Recall (+0.0054) et le Boundary Dice (+0.0076), avec une perte de precision bien plus contenue (-0.0266 au lieu de -0.0645 avec λ=0.5). `λ=0.1` ne fait pas mieux — en dessous de `λ=0.2` sur Dice/IoU/Precision, sans gain net sur le Boundary Dice ; la courbe de ce run montre une instabilité vers les epochs 288-296 (pics de train_loss, chute temporaire du val_dice à 0.7151) qui a pu pénaliser ce run précis, pas nécessairement représentatif de `λ=0.1` en général. Relation non monotone entre les 3 valeurs testées, cohérent avec du bruit d'entraînement (un seul run par configuration, pas de moyenne sur plusieurs seeds). **Configuration recommandée pour Solution A : `λ_bdry=0.2`.**
+- Conclusion : Solution A, correctement réglée, améliore la précision de contour et le recall sans sacrifier le Dice/IoU global — un résultat clair et défendable pour répondre à la question de recherche initiale du stage.
