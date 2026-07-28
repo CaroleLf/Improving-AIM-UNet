@@ -2,13 +2,14 @@
 
 Split fixe (seed=42, `data/splits/busi_split.json`), mêmes conditions pour toutes les étapes — condition nécessaire pour une comparaison baseline vs Solution A valide.
 
-| Étape | Modèle | Loss | Dataset | Val Dice (best) | Test Dice | Test IoU | Test Precision | Test Recall |
-|-------|--------|------|---------|------------------|-----------|----------|-----------------|-------------|
-| 1 | U-Net baseline | BCE+Dice | BUSI | 0.7771 (epoch 144) | 0.7710 | 0.6747 | 0.8406 | 0.7596 |
-| 2 | VSS-UNet (VSS seul, skip concat simple, N=2/étage, base=64 — hypothèses non confirmées) | BCE+Dice | BUSI | 0.7804 (epoch 150) | 0.7350 | 0.6457 | 0.7652 | 0.7581 |
-| 3 | AIM-UNet sans DESL (VSS + AIM + SAB/CAB, mêmes hypothèses N/canal) | BCE+Dice | BUSI | 0.7726 (epoch 150) | 0.7091 | 0.6255 | 0.7216 | 0.7550 |
-| 4 | AIM-UNet + DESL, avec corrections (SS2D à poids séparés par direction, base_dim=96 au lieu de 64, signe de L_cos corrigé) | DESL | BUSI | 0.7793 (epoch 126) | 0.7331 | 0.6451 | 0.7551 | 0.7772 |
-| 4b | Idem, 300 epochs au lieu de 150 (seule variable changée) | DESL | BUSI | 0.8201 (epoch 275) | **0.7712** | **0.6869** | 0.8284 | **0.7778** |
+| Étape | Modèle | Loss | Dataset | Val Dice (best) | Test Dice | Test IoU | Test Precision | Test Recall | Test Boundary Dice |
+|-------|--------|------|---------|------------------|-----------|----------|-----------------|-------------|---------------------|
+| 1 | U-Net baseline | BCE+Dice | BUSI | 0.7771 (epoch 144) | 0.7710 | 0.6747 | 0.8406 | 0.7596 | — |
+| 2 | VSS-UNet (VSS seul, skip concat simple, N=2/étage, base=64 — hypothèses non confirmées) | BCE+Dice | BUSI | 0.7804 (epoch 150) | 0.7350 | 0.6457 | 0.7652 | 0.7581 | — |
+| 3 | AIM-UNet sans DESL (VSS + AIM + SAB/CAB, mêmes hypothèses N/canal) | BCE+Dice | BUSI | 0.7726 (epoch 150) | 0.7091 | 0.6255 | 0.7216 | 0.7550 | — |
+| 4 | AIM-UNet + DESL, avec corrections (SS2D à poids séparés par direction, base_dim=96 au lieu de 64, signe de L_cos corrigé) | DESL | BUSI | 0.7793 (epoch 126) | 0.7331 | 0.6451 | 0.7551 | 0.7772 | — |
+| 4b | Idem, 300 epochs au lieu de 150 (seule variable changée) — **référence pour Solution A** | DESL | BUSI | 0.8201 (epoch 275) | **0.7712** | **0.6869** | 0.8284 | **0.7778** | **0.5747** |
+| 5 | Solution A — AIM-UNet + DESL + boundary-aware loss (bande dilate-érode), 300 epochs | BoundaryAwareDESL | BUSI | 0.8204 (epoch 300) | 0.7520 | 0.6663 | 0.7639 | **0.7949** | **0.5926** |
 
 ## Référence papier (Table 1, BUSI — valeurs réelles vérifiées dans le PDF, CMPB-D-26-02655)
 
@@ -42,3 +43,11 @@ Table 4 (ablation loss, avec Adaptive Inception + SK per-channel) : BCE+Dice seu
   - Question de fond à poser au Professeur Nguyen : le Tableau 3 du papier montre que ViM-UNet seul (Mamba sans AIM) n'apporte que +6.8 Dice sur le U-Net (70.10 → 76.92) — le vrai saut vient d'AIM+DESL. Est-ce que le contexte global de Mamba apporte réellement quelque chose sur des images 256×256 avec des tumeurs plutôt compactes, ou est-ce que l'essentiel du gain du papier est indépendant du backbone Mamba ?
   - Hyperparamètres N (blocs/étage) et canal de base restent des hypothèses non confirmées malgré la correction à 96 (valeur par défaut VMamba, pas une valeur spécifique à AIM-UNet).
 - **Étape 4b (300 epochs, seule variable changée)** : confirme l'hypothèse de sous-entraînement. Test Dice 0.7712 (quasi identique au baseline 0.7710), Test IoU 0.6869 (**meilleur score de tous les runs**, au-dessus du baseline), Recall 0.7778 (**meilleur de tous les runs**), Precision 0.8284 (quasi récupérée par rapport au baseline 0.8406). Le problème n'était donc pas structurel de fond — l'architecture correctement entraînée tient la comparaison avec le U-Net classique. Reproduction jugée satisfaisante pour servir de baseline à Solution A, malgré les hyperparamètres N/canal encore non confirmés par le Professeur Nguyen.
+
+## Solution A (loss boundary-aware)
+
+- **Bug trouvé et corrigé** : la première version de `extract_boundary` calculait `dilaté(masque) − masque`, une bande strictement **extérieure** à la vraie tumeur. Or `masque × bande` est alors structurellement toujours nul (la bande et la tumeur ne se chevauchent jamais par construction) — le Dice restreint à cette bande est dégénéré, aussi bien comme métrique que comme terme de loss (il pousse juste à ne rien prédire dans cet anneau, sans vraie notion d'alignement du contour). Confirmé par un `test_boundary_dice` anormalement bas (0.0600) sur le premier run. Corrigé en une bande dilatation-érosion qui chevauche les deux côtés du contour — vérifié avec un test unitaire (masque carré, décalage d'1 pixel : Dice global 0.84 mais `boundary_dice` 0.71, bien plus sensible à l'erreur de contour, comme attendu). Ce défaut venait de l'ébauche de l'essai Mac archivé (`docs/legacy_reference.md`), reprise sans assez la challenger.
+- Référence à battre : **Test Boundary Dice = 0.5747** (AIM-UNet + DESL, étape 4b, sans Solution A).
+- **Résultat final (étape 5)** : Solution A améliore le Recall (0.7778 → 0.7949, +0.017) et le **Boundary Dice** (0.5747 → 0.5926, +0.018) — la métrique la plus directement pertinente pour évaluer l'objectif déclaré (précision de délimitation des bords). Contrepartie : Precision en baisse plus marquée (0.8284 → 0.7639, -0.065), Dice global (-0.019) et IoU (-0.021) légèrement en baisse aussi.
+- **Interprétation** : effet mesurable et cohérent avec la théorie — le terme de boundary loss pousse le modèle à être moins conservateur sur les pixels de contour (d'où le recall et le boundary Dice en hausse), au prix de quelques faux positifs supplémentaires ailleurs (d'où la baisse de precision). Pas un gain spectaculaire sur le Dice global, mais un impact réel et mesurable sur la métrique ciblée par Solution A — cohérent avec l'objectif initial du stage ("mesurer si cette amélioration a un impact réel et mesurable, particulièrement pertinent pour les petites lésions ou les frontières à faible contraste").
+- Piste non explorée faute de temps : un `λ_bdry` plus faible que 0.5 (le défaut hérité de l'ébauche legacy) pourrait donner un meilleur compromis precision/recall — actuellement pas confirmé, à tester si le temps le permet.

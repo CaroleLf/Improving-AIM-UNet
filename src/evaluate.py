@@ -16,6 +16,7 @@ def main():
     parser.add_argument("--data_root", required=True)
     parser.add_argument("--model", choices=["unet", "vss_unet", "aim_unet"], default="unet")
     parser.add_argument("--loss", choices=["bce_dice", "desl", "boundary_desl"], default="bce_dice")
+    parser.add_argument("--lambda_bdry", type=float, default=0.5)
     parser.add_argument("--split_path", default="data/splits/busi_split.json")
     parser.add_argument("--checkpoint", default="checkpoints/best_model.pth")
     parser.add_argument("--image_size", type=int, default=256)
@@ -38,7 +39,7 @@ def main():
     model.load_state_dict(torch.load(args.checkpoint, map_location=device))
 
     if args.loss == "boundary_desl":
-        loss_fn = BoundaryAwareDESLLoss()
+        loss_fn = BoundaryAwareDESLLoss(lambda_bdry=args.lambda_bdry)
     elif args.loss == "desl":
         loss_fn = DESLLoss()
     else:

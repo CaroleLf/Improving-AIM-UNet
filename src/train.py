@@ -74,6 +74,7 @@ def main():
     parser.add_argument("--data_root", required=True)
     parser.add_argument("--model", choices=["unet", "vss_unet", "aim_unet"], default="unet")
     parser.add_argument("--loss", choices=["bce_dice", "desl", "boundary_desl"], default="bce_dice")
+    parser.add_argument("--lambda_bdry", type=float, default=0.5)
     parser.add_argument("--split_path", default="data/splits/busi_split.json")
     parser.add_argument("--epochs", type=int, default=150)
     parser.add_argument("--batch_size", type=int, default=4)
@@ -120,7 +121,7 @@ def main():
     model = build_model(args.model, return_branch_outputs=needs_branches).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     if args.loss == "boundary_desl":
-        loss_fn = BoundaryAwareDESLLoss()
+        loss_fn = BoundaryAwareDESLLoss(lambda_bdry=args.lambda_bdry)
     elif args.loss == "desl":
         loss_fn = DESLLoss()
     else:
