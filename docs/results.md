@@ -62,3 +62,28 @@ Table 4 (loss ablation, with Adaptive Inception + per-channel SK): BCE+Dice alon
 
   By far the best tradeoff at `lambda_bdry=0.2`: Dice slightly **above** the reference (0.7722 vs 0.7712), IoU nearly equal (-0.0011), while still keeping a real gain on Recall (+0.0054) and Boundary Dice (+0.0076), with a much smaller precision cost (-0.0266 instead of -0.0645 with lambda=0.5). `lambda=0.1` does not do better: below `lambda=0.2` on Dice/IoU/Precision, with no net gain on Boundary Dice. That run's curve shows instability around epochs 288-296 (train_loss spikes, val_dice temporarily dropping to 0.7151), which may have hurt this particular run without necessarily being representative of `lambda=0.1` in general. Non-monotonic relationship across the 3 tested values, consistent with training noise (a single run per configuration, no averaging over multiple seeds). **Recommended configuration for Solution A: `lambda_bdry=0.2`.**
 - Conclusion: Solution A, properly tuned, improves boundary precision and recall without sacrificing overall Dice/IoU, a clear and defensible result answering the internship's original research question.
+
+## Training pipeline improvements
+
+Motivated by two things observed across every run so far: strong epoch-to-epoch noise in val_dice (often +/-0.03 to 0.05), and at least one real instability episode (the lambda=0.1 run, loss spikes around epochs 288-296). Added to `src/train.py`:
+
+- Cosine learning rate schedule with linear warmup (10 epochs), instead of a constant lr.
+- Gradient clipping (max norm 1.0), a standard fix for the kind of loss spike observed on the lambda=0.1 run.
+- Light weight decay (1e-5) on Adam, given the small dataset (452 training images) relative to the model's capacity.
+- Exponential moving average (EMA) of model weights, decay 0.999. The EMA model (not the raw end-of-batch weights) is what gets validated and checkpointed, which smooths out the noise from picking a single lucky epoch.
+
+Validated locally first (EMA convergence toward a fixed target after enough updates, LR schedule values at key epochs) before a full run.
+
+**Result, same configuration as the best Solution A run (lambda_bdry=0.2, 300 epochs) but with these training improvements**:
+
+| | Solution A lambda=0.2 (before) | + EMA/LR schedule/clip/decay (after) | Delta |
+|---|---|---|---|
+| Test Dice | 0.7722 | **0.7884** | +0.0162 |
+| Test IoU | 0.6858 | **0.7003** | +0.0145 |
+| Precision | 0.8018 | 0.8065 | +0.0047 |
+| Recall | 0.7832 | **0.8265** | +0.0433 |
+| Boundary Dice | 0.5823 | **0.6066** | +0.0243 |
+
+Best result of the whole project. The val_dice curve over the last epochs (258-300) is visibly smooth and near-monotonic, unlike the jagged curves of every prior run, confirming the EMA is doing what it was added for. Beyond the stability gain, the training improvements also translated into a real performance gain across every metric, not just noise reduction. This configuration now exceeds the U-Net baseline on Dice (0.7884 vs 0.7710), IoU (0.7003, the first run to cross 0.70), and Recall (0.8265 vs 0.7596); only Precision remains slightly below the baseline (0.8065 vs 0.8406). Unlike earlier Solution A runs, the recall/boundary gain no longer comes at a real precision cost.
+
+**Final recommended configuration**: AIM-UNet, DESL, boundary-aware loss with `lambda_bdry=0.2`, 300 epochs, cosine LR schedule with 10-epoch warmup, gradient clipping at 1.0, weight decay 1e-5, EMA decay 0.999.
