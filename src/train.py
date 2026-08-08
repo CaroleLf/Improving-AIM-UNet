@@ -1,5 +1,7 @@
 import argparse
+import copy
 import csv
+import math
 import random
 from pathlib import Path
 
@@ -33,7 +35,38 @@ def set_seed(seed):
     torch.manual_seed(seed)
 
 
-def run_epoch(model, loader, loss_fn, device, optimizer=None):
+class EMA:
+    """Exponential moving average of model weights.
+
+    Evaluating/saving the EMA weights instead of the raw end-of-epoch weights
+    smooths out the epoch-to-epoch noise seen across every run so far (best
+    val_dice often landing on what looks like a lucky single epoch).
+    """
+
+    def __init__(self, model, decay):
+        self.decay = decay
+        self.shadow = copy.deepcopy(model.state_dict())
+
+    def update(self, model):
+        for name, param in model.state_dict().items():
+            if param.dtype.is_floating_point:
+                self.shadow[name].mul_(self.decay).add_(param.detach(), alpha=1 - self.decay)
+            else:
+                self.shadow[name] = param.clone()
+
+    def apply_to(self, model):
+        model.load_state_dict(self.shadow)
+
+
+def lr_at_epoch(epoch, base_lr, warmup_epochs, total_epochs):
+    """Linear warmup then cosine decay to ~0."""
+    if warmup_epochs > 0 and epoch <= warmup_epochs:
+        return base_lr * epoch / warmup_epochs
+    progress = (epoch - warmup_epochs) / max(1, total_epochs - warmup_epochs)
+    return base_lr * 0.5 * (1.0 + math.cos(math.pi * progress))
+
+
+def run_epoch(model, loader, loss_fn, device, optimizer=None, grad_clip=0.0, ema=None):
     is_train = optimizer is not None
     model.train() if is_train else model.eval()
 
@@ -56,7 +89,11 @@ def run_epoch(model, loader, loss_fn, device, optimizer=None):
             if is_train:
                 optimizer.zero_grad()
                 loss.backward()
+                if grad_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
                 optimizer.step()
+                if ema is not None:
+                    ema.update(model)
 
             total_loss += loss.item()
             batch_metrics = compute_metrics(preds.detach(), masks)
@@ -79,6 +116,10 @@ def main():
     parser.add_argument("--epochs", type=int, default=150)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--warmup_epochs", type=int, default=10)
+    parser.add_argument("--grad_clip", type=float, default=1.0)
+    parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--ema_decay", type=float, default=0.999)
     parser.add_argument("--image_size", type=int, default=256)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num_workers", type=int, default=2)
@@ -119,7 +160,9 @@ def main():
 
     needs_branches = args.loss in ("desl", "boundary_desl")
     model = build_model(args.model, return_branch_outputs=needs_branches).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    ema = EMA(model, args.ema_decay)
+    ema_model = build_model(args.model, return_branch_outputs=needs_branches).to(device)
     if args.loss == "boundary_desl":
         loss_fn = BoundaryAwareDESLLoss(lambda_bdry=args.lambda_bdry)
     elif args.loss == "desl":
@@ -142,11 +185,19 @@ def main():
 
     best_val_dice = -1.0
     for epoch in range(1, args.epochs + 1):
-        train_loss, _ = run_epoch(model, train_loader, loss_fn, device, optimizer)
-        val_loss, val_metrics = run_epoch(model, val_loader, loss_fn, device, optimizer=None)
+        lr = lr_at_epoch(epoch, args.lr, args.warmup_epochs, args.epochs)
+        for group in optimizer.param_groups:
+            group["lr"] = lr
+
+        train_loss, _ = run_epoch(
+            model, train_loader, loss_fn, device, optimizer, grad_clip=args.grad_clip, ema=ema
+        )
+
+        ema.apply_to(ema_model)
+        val_loss, val_metrics = run_epoch(ema_model, val_loader, loss_fn, device, optimizer=None)
 
         print(
-            f"epoch {epoch}/{args.epochs} - train_loss {train_loss:.4f} - "
+            f"epoch {epoch}/{args.epochs} - lr {lr:.6f} - train_loss {train_loss:.4f} - "
             f"val_loss {val_loss:.4f} - val_dice {val_metrics['dice']:.4f}"
         )
 
@@ -160,7 +211,7 @@ def main():
 
         if val_metrics["dice"] > best_val_dice:
             best_val_dice = val_metrics["dice"]
-            torch.save(model.state_dict(), checkpoint_dir / "best_model.pth")
+            torch.save(ema_model.state_dict(), checkpoint_dir / "best_model.pth")
 
     print(f"best val dice: {best_val_dice:.4f}")
 
