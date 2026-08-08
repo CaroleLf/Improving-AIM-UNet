@@ -10,9 +10,10 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataset import BUSIDataset
+from dataset_b2 import UdiatDatasetB2
 from losses import BCEDiceLoss, BoundaryAwareDESLLoss, DESLLoss
 from metrics import compute_metrics
-from splits import build_split, load_split, save_split
+from splits import build_dataset, build_split, load_split, save_split
 from transforms import get_eval_transform, get_train_transform
 from aim_unet import AIMUNet
 from unet import UNet
@@ -109,6 +110,7 @@ def run_epoch(model, loader, loss_fn, device, optimizer=None, grad_clip=0.0, ema
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", required=True)
+    parser.add_argument("--dataset", choices=["busi", "b2"], default="busi")
     parser.add_argument("--model", choices=["unet", "vss_unet", "aim_unet"], default="unet")
     parser.add_argument("--loss", choices=["bce_dice", "desl", "boundary_desl"], default="bce_dice")
     parser.add_argument("--lambda_bdry", type=float, default=0.5)
@@ -127,16 +129,20 @@ def main():
     parser.add_argument("--checkpoint_dir", default="checkpoints")
     parser.add_argument("--log_dir", default="logs")
     args = parser.parse_args()
+    if args.dataset == "b2" and args.split_path == "data/splits/busi_split.json":
+        args.split_path = "data/splits/b2_split.json"
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}")
 
+    dataset_cls = BUSIDataset if args.dataset == "busi" else UdiatDatasetB2
+
     split_path = Path(args.split_path)
     if split_path.exists():
         split = load_split(split_path)
     else:
-        split = build_split(args.data_root, seed=args.seed)
+        split = build_split(build_dataset(args.dataset, args.data_root), seed=args.seed)
         save_split(split, split_path)
 
     train_records, val_records = split["train"], split["val"]
@@ -144,10 +150,10 @@ def main():
         train_records = train_records[: args.limit_samples]
         val_records = val_records[: max(1, args.limit_samples // 4)]
 
-    train_dataset = BUSIDataset.from_records(
+    train_dataset = dataset_cls.from_records(
         train_records, transform=get_train_transform(args.image_size)
     )
-    val_dataset = BUSIDataset.from_records(
+    val_dataset = dataset_cls.from_records(
         val_records, transform=get_eval_transform(args.image_size)
     )
 

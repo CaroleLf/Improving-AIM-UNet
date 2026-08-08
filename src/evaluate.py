@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataset import BUSIDataset
+from dataset_b2 import UdiatDatasetB2
 from losses import BCEDiceLoss, BoundaryAwareDESLLoss, DESLLoss
 from splits import load_split
 from train import build_model, run_epoch
@@ -14,6 +15,7 @@ from transforms import get_eval_transform
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", required=True)
+    parser.add_argument("--dataset", choices=["busi", "b2"], default="busi")
     parser.add_argument("--model", choices=["unet", "vss_unet", "aim_unet"], default="unet")
     parser.add_argument("--loss", choices=["bce_dice", "desl", "boundary_desl"], default="bce_dice")
     parser.add_argument("--lambda_bdry", type=float, default=0.5)
@@ -23,11 +25,14 @@ def main():
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--num_workers", type=int, default=2)
     args = parser.parse_args()
+    if args.dataset == "b2" and args.split_path == "data/splits/busi_split.json":
+        args.split_path = "data/splits/b2_split.json"
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    dataset_cls = BUSIDataset if args.dataset == "busi" else UdiatDatasetB2
     split = load_split(Path(args.split_path))
-    test_dataset = BUSIDataset.from_records(
+    test_dataset = dataset_cls.from_records(
         split["test"], transform=get_eval_transform(args.image_size)
     )
     test_loader = DataLoader(
